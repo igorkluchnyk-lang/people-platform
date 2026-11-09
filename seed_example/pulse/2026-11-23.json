@@ -1,0 +1,22 @@
+{
+ "title": "Пульс листопада",
+ "start": "2026-11-23",
+ "deadline": "2026-11-25",
+ "form": "https://docs.google.com/forms/d/<FORM_ID>/viewform",
+ "roster": [
+  "anna"
+ ],
+ "responses": [
+  {
+   "person": "anna",
+   "energy": 4,
+   "clarity": 3,
+   "blocker": "Чекаю бюджет на тест каналу"
+  }
+ ],
+ "conclusions": [
+  "Ясність 3: на 1:1 проговорити пріоритети місяця"
+ ],
+ "source": "Google Form",
+ "updatedAt": "2026-11-26"
+}
