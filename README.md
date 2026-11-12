@@ -22,15 +22,16 @@
 
 4. Відкрий посилання, перевір, поділись з CEO через Share (Contributor).
 
-Конектори, які варто мати в claude.ai: Linear (живі цілі), Pocket або Granola (записи 1:1), Slack і Gmail (бриф). Без конектора відповідна функція просто вимикається.
+Конектори, які варто мати в claude.ai: Linear (живі цілі), Pocket або Granola (записи 1:1), Gmail (бриф). Робочий Slack і робоча пошта для брифу йдуть через локальний сервер `people-feed` (розділ нижче). Без конектора відповідна функція просто вимикається.
 
 ## Що всередині
 
 | Шлях | Що це |
 |---|---|
-| `platform.html` | сторінка платформи (vanilla JS, без збірки), v38 |
+| `platform.html` | сторінка платформи (vanilla JS, без збірки), v40 |
 | `live_overlay.js` | живий шар окремо: `liveApply(L)` накладає статуси з Linear на цілі, `liveBadge()` (вбудований і в `platform.html`) |
 | `vercel/` | read-only копія для людей без claude.ai: `build.py`, сторінка з паролем, `api/live.js` (Linear + Slack) |
+| `scripts/people_feed_mcp.py` | локальний MCP-сервер для брифу: робочий Slack і робоча пошта по людині (тільки читання, без LLM) |
 | `scripts/goals_daily.py` | щоденний тред у Slack-каналі цілей: по людині N/M done, наступна, прострочені (без LLM, для cron) |
 | `scripts/pulse_watch.py` | сторож пульсу: на кожну відповідь Google-форми повідомлення партнеру в Telegram, після дедлайну хто не відповів (без LLM, для cron) |
 | `tools/build_batches.py` | папка `seed/<колекція>/<id>.json` → батчі для ArtifactData по 50 записів |
@@ -40,7 +41,7 @@
 
 - **Дашборд**: ціль компанії і напрями, онбординг нових людей, черга 1:1 → цілі, пульс, тиждень.
 - **Цілі**: смуга цілі компанії, рядок на людину з крапками 🟢🟡🔴⬜, «чому такий статус», цілі по місяцях, черга «на підтвердження».
-- **Людина**: огляд з брифом до 1:1 (кнопка збирає Slack, пошту, зустрічі), follow-up після зустрічі, цілі і репорти, зустрічі, питання, документи і доступи, 360, фінал initial term.
+- **Людина**: огляд з брифом до 1:1 (кнопка збирає Slack, пошту, зустрічі; бриф іде за фазами зустрічі, з позицією і тоном), «Розібрати зустріч» після 1:1, follow-up після зустрічі, цілі і репорти, зустрічі, питання, документи і доступи, 360, фінал initial term.
 - **Тижневий синк** і **Місячний синк**: сценарій з бази, текст у чат, блок партнера редагується, повідомлення в Slack до дзвінка, follow-up після з перевіркою нікнеймів.
 - **Календар**, **Вхідні**, **Як ми працюємо** (база знань, ритм, банк питань для 1:1).
 
@@ -51,7 +52,7 @@
    - `db`, правила: корінь `read: interact`, `write: admin`; колекції `questions`, `notes`, `access`, `surveys` і `data/users/{self}`: `write: interact`;
    - `user` зі scope `profile`;
    - `sample` (бриф, 360, розбір 1:1 → цілі, адженда, follow-up);
-   - `mcp`: `Linear` [`list_issues`], `Pocket` [`search_pocket_conversations`], `Granola` [`search_meetings`, `get_meetings`], `Slack` [`slack_search_public_and_private`], `Gmail` [`search_threads`].
+   - `mcp`: `Linear` [`list_issues`], `Pocket` [`search_pocket_conversations`], `Granola` [`search_meetings`, `get_meetings`], `Gmail` [`search_threads`], локальний `host:people-feed` [`person_feed`] (розділ «Бриф: локальний фід»).
    Перед публікацією завантаж скіл `artifact-capabilities`.
 3. Збери дані в `seed/` за схемою нижче, `python3 tools/build_batches.py seed out/`, кожен `out/batch_N.json` через `ArtifactData` action `batch`.
 4. Відкрий artifact, перевір дашборд, «Цілі», одну людину, «Тижневий синк».
@@ -63,6 +64,19 @@
 3. **Бриф кнопкою** лишається ручним: збирає Slack, пошту, Granola, Pocket і базу.
 4. **Vercel-копія** тягне `/api/live` кожні 5 хвилин (ті самі цілі з Linear плюс цифри компанії з ранкового поста бота в Slack, якщо є `GOALS_CHANNEL`).
 
+## Бриф: локальний фід `people-feed`
+
+Slack-конектор у claude.ai часто дивиться в інший воркспейс, а Gmail в особисту пошту. Тому робочий Slack і робочу пошту бриф бере з локального MCP-сервера `scripts/people_feed_mcp.py` (тільки читання, без LLM).
+
+- Читає від минулого 1:1: повідомлення людини, DM партнера з нею, згадки, рядки про людину з DM партнера з CEO (за 6 тижнів), підсумки партнера й CEO в командному каналі, листи з адресами людини, відмови в календарі. Бриф показує лічильник по кожному джерелу.
+- Env (або `SECRETS_FILE` з рядками `KEY=value`): `SLACK_USER_TOKEN` (user token партнера, scopes `search:read`, `users:read`, `im:history`), `OWNER_SLACK_ID`, `LEAD_SLACK_ID`, `LEAD_DM_CHANNEL`, `TEAM_CHANNEL`, `GOOGLE_TOKEN_FILE` (authorized_user JSON з `gmail.readonly` робочої пошти); необовʼязково `MAILBOX_ADDRESS`, `TZ_NAME`.
+- Встановлення: `claude mcp add --scope user people-feed -- python3 /path/to/people_feed_mcp.py` (env через `-e KEY=value` або `SECRETS_FILE`). Перевірка: `python3 scripts/people_feed_mcp.py --test <slack_id> 2026-11-01 <імʼя>`.
+- Працює тільки коли сторінку відкрив її власник у застосунку Claude desktop. Сторінка має оголосити сервер у маніфесті `mcp` поруч з конекторами: `host:people-feed` [`person_feed`]. Назва в `CFG.feedServer`, порожньо = не кликати.
+
+## Розібрати зустріч
+
+Кнопка під брифом (режим «Для мене», потрібні `sample`, Pocket у `mcp` і права редактора). Бере транскрипт останнього 1:1 з Pocket (дата з `agenda`), бриф і минулі зустрічі. Claude дає підсумок, домовленості, сигнали, позицію людини (зараз / як говорити / куди вести), фідбек ведучому з часткою часу по мовцях, чого не вистачило в брифі, чернетку нотатки CEO (надсилаєш сам). Пише в `meetings/<key>-<дата>`, наступний бриф бере звідти позицію, хвости й уроки.
+
 ## Розгортання на Vercel (необовʼязково)
 
 1. `cd vercel && python3 build.py ../seed` → `site/index.html` (дані вшиті, без запису).
@@ -71,7 +85,7 @@
 
 ## Що змінити під іншу команду
 
-1. На початку скрипта: `const ORDER=[]` (ключі людей у порядку показу) і `CFG`: `dmChannel` (Slack ID DM партнера з CEO для брифу, порожньо = не шукати), `target` і `unit` (ціль компанії за замовчуванням, напр. 100 «клієнтів»), `goalsChannel` і `teamChannel` (канали Slack для цілей і команди).
+1. На початку скрипта: `const ORDER=[]` (ключі людей у порядку показу) і `CFG`: `feedServer` (назва локального сервера брифу, за замовчуванням `people-feed`, порожньо = не кликати), `target` і `unit` (ціль компанії за замовчуванням, напр. 100 «клієнтів»), `goalsChannel` і `teamChannel` (канали Slack для цілей і команди).
 2. Імена для пошуку в записах: `NM` (follow-up) і `NMS` (1:1 → цілі), `ENN` (англійські імена у сценарії monthly), `MALE` (рід), `LPEOPLE` (перше слово назви цілей у Linear → key). Нік у Slack для follow-up: поле `slack` у `people/<key>` (напр. `"@Anna Example"`); `NICKFIX` опційно виправляє короткі імена на точні ніки.
 3. Ролі: людина з key `ceo` = лід, `partner` = people partner (сторінка партнера показує адженду синку з CEO). У текстах стоїть «CEO» і «партнер»; питання до ліда мають `to: "CEO"`. Назви полів `needFromVitalik` і `vitalik` (бриф для CEO) лишились зі схеми Chia People, їх не перейменовуй без міграції бази.
 4. Бренд: кольори в `:root`, SVG-логотип у шапці, шрифти.
@@ -85,14 +99,14 @@
 | `people` | key, name, short, role, slack, color (green/yellow/red), start, termEnd, lead, buddy, location, tz, window, summaryPoints[], signals[], about{}, d{} (профіль D1-D4), onboarding[] {step, date, status: done/now/next/risk/miss, note, links[]}, docsFolder, linkedin, links[], facts[], needFromVitalik |
 | `goals` | Linear-поля: url, live, liveAt, doneAt, archived; компанія: level=company, owner, title, current, target, unit, due, status; напрям: level=direction, owner, parent; людина: person, parent, title, measure, current, target, unit, due, status (done/on_track/at_risk/behind/unknown), note, source, order |
 | `reports` | person, date, goals[] {t, s: green/yellow/red, n}, progress[], next[], needed[], url |
-| `meetings` | person або people[], date, kind, title, summary, agreed[], signals[], score, source |
+| `meetings` | person або people[], date, kind, title, summary, agreed[], signals[], score, source; розбір 1:1: position {now, how, toward}, hostFeedback {talkShare, good[], improve[]}, briefGaps[], leadNote, reviewedAt |
 | `questions` | person, text, to, status (open/answered/dropped), raisedAt, answer, closedAt |
 | `agenda` | date, time, kind (one/team/checkpoint/term/sync/money/absence/plan), person, title, warn, note |
 | `docs` | person, type, status (signed/sent/missing/unknown/pending), date, where, url, note |
 | `access` | person, system, issued, works, by, note |
 | `pay`, `comp` | виплати і умови (тільки для власника і CEO) |
 | `hiring` | історія відбору (тільки читання): profile, scorecard, stages, references, ceoBrief, final |
-| `prep` | бриф до зустрічі: tails, ask, goalsRisk, praise, avoid, after |
+| `prep` | бриф до зустрічі: final {uk, en}: meeting, position {now, how, toward}, alert[], sections[] {phase: start/middle/end/after, title, items[]}; sources[], since; старий формат: tails, ask, goalsRisk, praise, avoid, after |
 | `sync` | `sync/meetings`: lastAt, runAt, done[] (які записи вже розібрано) |
 | `goalq` | черга «на підтвердження» з 1:1: kind (update/new), goal, person, текст; у `goals` пишеться тільки після ✓ |
 | `msync` | сценарії синків: `msync/next` (місячний), `msync/weekly` (тижневий, блок партнера редагується) |
@@ -116,6 +130,7 @@
 
 ## Версії
 
+- v40 (12.11.2026): бриф з локального фіду `people-feed` (робочий Slack і пошта, чесні лічильники), фази зустрічі (початок, середина, кінець з 3 кроками закриття, після), «Позиція і тон», подяка, хвости минулого 1:1, командні події, історія за 6 тижнів, відмови в календарі; «Розібрати зустріч»; кнопка закріпити/сховати панель «Команда»; `CFG.feedServer` замість `CFG.dmChannel`.
 - v38 (09.11.2026): тижневий синк, follow-up однією кнопкою з перевіркою нікнеймів (поле `slack`), пульс команди (`pulse`, `pulse_watch.py`), цілі по місяцях, черга 1:1 → цілі з підтвердженням, адженда синку з CEO кнопкою, `CFG` замість захардкоджених цифр і каналів.
 - v30 (05.11.2026): живий шар (Linear при відкритті, 1:1 → цілі з Pocket/Granola), Vercel `/api/live`, `goals_daily.py`.
 - v4 (22.10.2026): перший шаблон (каскад цілей, онбординг, 1:1, 360).
